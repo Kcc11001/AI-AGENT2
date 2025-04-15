@@ -111,9 +111,96 @@ if uploaded_file:
         st.pyplot(fig2)
 
     # --- Excel Export with KPI sheet ---
-    def generate_excel(df1,_
+    def generate_excel(df1, df2, kpi_dict):
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df1.to_excel(writer, index=False, sheet_name='Historical')
+            df2.to_excel(writer, index=False, sheet_name='Forecast')
+            kpi_df = pd.DataFrame(kpi_dict.items(), columns=["KPI", "Value"])
+            kpi_df.to_excel(writer, index=False, sheet_name='KPI Summary')
+        output.seek(0)
+        return output.read()
 
+    # Prepare KPI data for export
+    kpi_dict = {
+        "Historical Average Revenue": f"${hist_avg:,.2f}",
+        "Forecast Average Revenue": f"${fut_avg:,.2f}",
+        "Forecast % Change": f"{forecast_change:.2f}%",
+        "Revenue Volatility": f"${volatility:,.2f}",
+        "Avg Confidence Range Width": f"${conf_width_avg:,.2f}"
+    }
+
+    excel_data = generate_excel(df, forecast, kpi_dict)
+
+    st.sidebar.subheader("📤 Export Options")
+    st.sidebar.download_button(
+        label="📥 Download Excel",
+        data=excel_data,
+        file_name="revenue_forecast_with_kpis.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+    # AI Commentary
+    st.subheader("🧠 AI-Generated Financial Commentary")
+
+    prompt = f"""
+    You are a senior FP&A analyst. Based on the summarized revenue data below, analyze the current state and outlook of the business.
+
+    🔹 Historical Revenue Summary (last 30 days):
+    Count: {hist_summary['y']['count']}
+    Mean: {hist_summary['y']['mean']}
+    Min: {hist_summary['y']['min']}
+    Max: {hist_summary['y']['max']}
+
+    🔹 Forecasted Revenue Summary (next {forecast_days} days):
+    Count: {fut_summary['yhat']['count']}
+    Mean: {fut_summary['yhat']['mean']}
+    Min: {fut_summary['yhat']['min']}
+    Max: {fut_summary['yhat']['max']}
+
+    Please:
+    - Identify revenue trends and inflection points
+    - Highlight risks or seasonality
+    - Use the Pyramid Principle
+    - Provide 3 CFO-level recommendations
+    """
+
+    estimated_tokens = len(prompt.split())
+    st.sidebar.markdown(f"🧠 Estimated Tokens: `{estimated_tokens}` / 6000")
+
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a financial forecasting expert."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama3-8b-8192"
+        )
+        ai_commentary = response.choices[0].message.content
+        st.markdown(ai_commentary)
+
+        # PDF Export
+        def create_summary_pdf(text: str) -> BytesIO:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.set_font("Arial", size=12)
+            for line in text.split('\n'):
+                pdf.multi_cell(0, 10, line)
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+            return BytesIO(pdf_bytes)
+
+        pdf_bytes = create_summary_pdf(ai_commentary)
+
+        st.sidebar.download_button(
+            label="🧾 Download PDF Summary",
+            data=pdf_bytes,
+            file_name="forecast_summary.pdf",
+            mime="application/pdf"
+        )
 
     except Exception as e:
         st.error(f"Groq API Error: {e}")
+
 
