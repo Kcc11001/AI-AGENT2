@@ -2,76 +2,99 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from prophet import Prophet
-import os
 from dotenv import load_dotenv
+import os
 from groq import Groq
 
-# Load API key securely
+# Load environment variables
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# --- Streamlit Page Config ---
-st.set_page_config(page_title="Revenue Forecasting AI Agent", page_icon="📈", layout="wide")
-st.title("📈 Revenue Forecasting with Prophet & AI Insights")
+# Streamlit settings
+st.set_page_config(page_title="📈 Revenue Forecasting with AI", page_icon="📊", layout="wide")
+st.title("📈 Revenue Forecasting AI Agent")
 
-# --- API Key Check ---
+# Validate API key
 if not GROQ_API_KEY:
-    st.error("🚨 API Key is missing! Set it in Streamlit Secrets or a .env file.")
+    st.error("🚨 API Key is missing! Set it in a `.env` file or Streamlit Secrets.")
     st.stop()
 
-# --- Upload File ---
-uploaded_file = st.file_uploader("Upload Excel file with 'Date' and 'Revenue' columns", type=["xlsx", "xls"])
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
+# Upload Excel file
+uploaded_file = st.file_uploader("Upload Excel File with 'Date' and 'Revenue' columns", type=["xlsx", "xls"])
+if uploaded_file is not None:
+    try:
+        df = pd.read_excel(uploaded_file)
+    except Exception as e:
+        st.error(f"Error reading file: {e}")
+        st.stop()
 
-    # --- Basic Validation ---
     if "Date" not in df.columns or "Revenue" not in df.columns:
         st.error("❌ The file must contain 'Date' and 'Revenue' columns.")
         st.stop()
 
-    # --- Preprocessing ---
+    # Preprocessing
     df = df[["Date", "Revenue"]].dropna()
-    df.columns = ["ds", "y"]  # Rename for Prophet compatibility
+    df.columns = ["ds", "y"]
     df["ds"] = pd.to_datetime(df["ds"])
 
-    st.subheader("📊 Historical Revenue Data")
-    st.line_chart(df.set_index("ds")["y"])
+    st.subheader("📊 Historical Revenue")
+    st.line_chart(df.set_index("ds"))
 
-    # --- Forecasting with Prophet ---
+    # Forecasting
     model = Prophet()
     model.fit(df)
 
     future = model.make_future_dataframe(periods=90)
     forecast = model.predict(future)
 
-    st.subheader("🔮 Forecasted Revenue (Next 90 Days)")
-    fig = model.plot(forecast)
-    st.pyplot(fig)
+    st.subheader("🔮 Forecast for Next 90 Days")
+    fig1 = model.plot(forecast)
+    st.pyplot(fig1)
 
-    # --- AI Commentary Generation ---
-    st.subheader("🤖 AI-Generated Forecast Commentary")
+    # Components
+    with st.expander("📉 View Forecast Components"):
+        fig2 = model.plot_components(forecast)
+        st.pyplot(fig2)
 
-    data_for_ai = df.to_json(orient="records", date_format="iso")
+    # Prepare summarized data for AI
+    st.subheader("🧠 AI-Generated Financial Commentary")
+
+    # Limit to last 30 actuals and next 30 forecasted days for context
+    historical_summary = df.tail(30).describe().round(2).to_dict()
+    future_summary = forecast[['ds', 'yhat']].tail(30).describe().round(2).to_dict()
 
     prompt = f"""
-    You are a top-tier FP&A professional. Analyze the historical and forecasted revenue data below.
-    
-    1. Identify key revenue trends and inflection points.
-    2. Evaluate potential future risks or seasonality.
-    3. Provide a summary using the Pyramid Principle.
-    4. Suggest 3 strategic actions a CFO should consider.
+    You are a senior FP&A analyst. Based on the summarized revenue data below, analyze the current state and outlook of the business.
 
-    Historical and Forecasted Revenue JSON:
-    {data_for_ai}
+    🔹 Historical Revenue Summary (last 30 days):
+    Count: {historical_summary['y']['count']}
+    Mean: {historical_summary['y']['mean']}
+    Min: {historical_summary['y']['min']}
+    Max: {historical_summary['y']['max']}
+
+    🔹 Forecasted Revenue Summary (next 30 days):
+    Count: {future_summary['yhat']['count']}
+    Mean: {future_summary['yhat']['mean']}
+    Min: {future_summary['yhat']['min']}
+    Max: {future_summary['yhat']['max']}
+
+    Please:
+    - Identify revenue trends and inflection points
+    - Highlight risks or seasonality
+    - Provide a CFO-ready summary using the Pyramid Principle
+    - Recommend 3 strategic actions
     """
 
-    client = Groq(api_key=GROQ_API_KEY)
-    response = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": "You are an FP&A expert specializing in financial forecasting."},
-            {"role": "user", "content": prompt}
-        ],
-        model="llama3-8b-8192"
-    )
-    ai_commentary = response.choices[0].message.content
-    st.write(ai_commentary)
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a financial forecasting expert."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama3-8b-8192"
+        )
+        ai_commentary = response.choices[0].message.content
+        st.markdown(ai_commentary)
+    except Exception as e:
+        st.error(f"Groq API error: {e}")
