@@ -8,15 +8,15 @@ from groq import Groq
 from io import BytesIO
 from fpdf import FPDF
 
-# Load API key from .env
+# Load API key
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Page settings
+# Set up Streamlit page
 st.set_page_config(page_title="📈 Revenue Forecasting AI Agent", layout="wide")
 st.title("📈 Revenue Forecasting AI Agent")
 
-# Check for missing API key
+# API Key Check
 if not GROQ_API_KEY:
     st.error("🚨 API Key is missing! Set it in a `.env` file or Streamlit Secrets.")
     st.stop()
@@ -31,12 +31,11 @@ if uploaded_file:
         st.error(f"❌ Error reading file: {e}")
         st.stop()
 
-    # Validate required columns
     if "Date" not in df.columns or "Revenue" not in df.columns:
         st.error("❌ File must contain 'Date' and 'Revenue' columns.")
         st.stop()
 
-    # Prepare dataframe
+    # Prepare data
     df = df[["Date", "Revenue"]].dropna()
     df.columns = ["ds", "y"]
     df["ds"] = pd.to_datetime(df["ds"])
@@ -44,11 +43,11 @@ if uploaded_file:
     st.subheader("📊 Historical Revenue")
     st.line_chart(df.set_index("ds"))
 
-    # Sidebar: Forecast horizon
+    # Forecast period selector
     st.sidebar.header("🔧 Forecast Settings")
     forecast_days = st.sidebar.selectbox("Forecast period (days):", [30, 60, 90, 180], index=2)
 
-    # Forecasting with Prophet
+    # Prophet Forecast
     model = Prophet()
     model.fit(df)
     future = model.make_future_dataframe(periods=forecast_days)
@@ -62,7 +61,7 @@ if uploaded_file:
         fig2 = model.plot_components(forecast)
         st.pyplot(fig2)
 
-    # --- Export to Excel ---
+    # --- Excel Export ---
     def generate_excel(df1, df2):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -81,7 +80,7 @@ if uploaded_file:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # --- AI Summary for Groq ---
+    # --- AI Commentary ---
     st.subheader("🧠 AI-Generated Financial Commentary")
 
     hist_summary = df.tail(30).describe().round(2).to_dict()
@@ -103,7 +102,7 @@ if uploaded_file:
     Max: {fut_summary['yhat']['max']}
 
     Please:
-    - Identify trends and inflection points
+    - Identify revenue trends and inflection points
     - Highlight risks or seasonality
     - Use the Pyramid Principle
     - Provide 3 CFO-level recommendations
@@ -124,7 +123,7 @@ if uploaded_file:
         ai_commentary = response.choices[0].message.content
         st.markdown(ai_commentary)
 
-        # --- Export PDF ---
+        # --- Generate PDF as bytes ---
         def create_summary_pdf(text: str) -> BytesIO:
             pdf = FPDF()
             pdf.add_page()
@@ -132,10 +131,8 @@ if uploaded_file:
             pdf.set_font("Arial", size=12)
             for line in text.split('\n'):
                 pdf.multi_cell(0, 10, line)
-            pdf_output = BytesIO()
-            pdf.output(pdf_output)
-            pdf_output.seek(0)
-            return pdf_output
+            pdf_bytes = pdf.output(dest='S').encode('latin1')  # FIXED LINE
+            return BytesIO(pdf_bytes)
 
         pdf_bytes = create_summary_pdf(ai_commentary)
 
@@ -148,4 +145,5 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"Groq API Error: {e}")
+
 
