@@ -21,7 +21,7 @@ if not GROQ_API_KEY:
     st.error("🚨 API Key is missing! Set it in a `.env` file or Streamlit Secrets.")
     st.stop()
 
-# Upload Excel
+# Upload Excel file
 uploaded_file = st.file_uploader("📥 Upload Excel file with 'Date' and 'Revenue' columns", type=["xlsx", "xls"])
 
 if uploaded_file:
@@ -82,22 +82,33 @@ if uploaded_file:
         fig2 = model.plot_components(forecast)
         st.pyplot(fig2)
 
-    # Export to Excel
-    def generate_excel(df1, df2):
+    # --- Excel Export with KPI sheet ---
+    def generate_excel(df1, df2, kpi_dict):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df1.to_excel(writer, index=False, sheet_name='Historical')
             df2.to_excel(writer, index=False, sheet_name='Forecast')
+            kpi_df = pd.DataFrame(kpi_dict.items(), columns=["KPI", "Value"])
+            kpi_df.to_excel(writer, index=False, sheet_name='KPI Summary')
         output.seek(0)
         return output.read()
 
-    excel_data = generate_excel(df, forecast)
+    # Prepare KPI data for export
+    kpi_dict = {
+        "Historical Average Revenue": f"${hist_avg:,.2f}",
+        "Forecast Average Revenue": f"${fut_avg:,.2f}",
+        "Forecast % Change": f"{forecast_change:.2f}%",
+        "Revenue Volatility": f"${volatility:,.2f}",
+        "Avg Confidence Range Width": f"${conf_width_avg:,.2f}"
+    }
+
+    excel_data = generate_excel(df, forecast, kpi_dict)
 
     st.sidebar.subheader("📤 Export Options")
     st.sidebar.download_button(
         label="📥 Download Excel",
         data=excel_data,
-        file_name="revenue_forecast.xlsx",
+        file_name="revenue_forecast_with_kpis.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
@@ -141,7 +152,7 @@ if uploaded_file:
         ai_commentary = response.choices[0].message.content
         st.markdown(ai_commentary)
 
-        # Export PDF
+        # PDF Export
         def create_summary_pdf(text: str) -> BytesIO:
             pdf = FPDF()
             pdf.add_page()
@@ -163,3 +174,4 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"Groq API Error: {e}")
+
