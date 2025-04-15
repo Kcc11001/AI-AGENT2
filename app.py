@@ -8,7 +8,7 @@ from groq import Groq
 from io import BytesIO
 from fpdf import FPDF
 
-# Load API key
+# Load API Key
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -79,6 +79,7 @@ if uploaded_file:
 
     low_threshold = volatility * 0.75
     high_threshold = volatility * 1.25
+    anomaly_threshold = volatility * 1.5
 
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(forecast_range["ds"], forecast_range["Confidence Width"], label="Confidence Width", linewidth=2)
@@ -95,6 +96,15 @@ if uploaded_file:
     ax.legend(loc="upper right")
     ax.grid(True)
     st.pyplot(fig)
+
+    # 🔍 Detect Anomalies
+    st.subheader("🚨 Forecast Anomaly Detection")
+    anomalies = forecast_range[forecast_range["Confidence Width"] > anomaly_threshold][["ds", "yhat", "Confidence Width"]]
+    if anomalies.empty:
+        st.success("✅ No anomalies detected in the forecast confidence intervals.")
+    else:
+        st.warning(f"⚠️ {len(anomalies)} anomalies detected (confidence width > 1.5× historical volatility)")
+        st.dataframe(anomalies.rename(columns={"ds": "Date", "yhat": "Forecast", "Confidence Width": "Conf. Range Width"}))
 
     # Forecast chart
     st.subheader(f"🔮 Forecast for Next {forecast_days} Days")
@@ -196,5 +206,3 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"Groq API Error: {e}")
-
-
