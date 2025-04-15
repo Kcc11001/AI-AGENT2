@@ -6,3 +6,4 @@ openpyxl
 prophet
 groq
 XlsxWriter
+fpdf
