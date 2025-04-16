@@ -12,16 +12,13 @@ from fpdf import FPDF
 load_dotenv()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Page setup
 st.set_page_config(page_title="📈 Revenue Forecasting AI Agent", layout="wide")
 st.title("📈 Revenue Forecasting AI Agent")
 
-# API Key check
 if not bool(GROQ_API_KEY):
     st.error("🚨 API Key is missing! Set it in .env or Streamlit Secrets.")
     st.stop()
 
-# Upload Excel file
 uploaded_file = st.file_uploader("📥 Upload Excel file with 'Date' and 'Revenue' columns", type=["xlsx", "xls"])
 
 if uploaded_file:
@@ -36,7 +33,6 @@ if uploaded_file:
     st.subheader("📊 Historical Revenue")
     st.line_chart(df.set_index("ds"))
 
-    # Forecast settings
     st.sidebar.header("🔧 Forecast Settings")
     forecast_days = st.sidebar.selectbox("Forecast period (days):", [30, 60, 90, 180], index=2)
 
@@ -104,26 +100,26 @@ if uploaded_file:
 
     # AI Commentary Prompt
     prompt = f"""
-    You are a senior FP&A analyst. Based on the summarized revenue data below, analyze the current state and outlook of the business.
+You are a senior FP&A analyst. Based on the summarized revenue data below, analyze the current state and outlook of the business.
 
-    🔹 Historical Revenue Summary (last 30 days):
-    Count: {hist_summary['y']['count']}
-    Mean: {hist_summary['y']['mean']}
-    Min: {hist_summary['y']['min']}
-    Max: {hist_summary['y']['max']}
+🔹 Historical Revenue Summary (last 30 days):
+Count: {hist_summary['y']['count']}
+Mean: {hist_summary['y']['mean']}
+Min: {hist_summary['y']['min']}
+Max: {hist_summary['y']['max']}
 
-    🔹 Forecasted Revenue Summary (next {forecast_days} days):
-    Count: {fut_summary['yhat']['count']}
-    Mean: {fut_summary['yhat']['mean']}
-    Min: {fut_summary['yhat']['min']}
-    Max: {fut_summary['yhat']['max']}
+🔹 Forecasted Revenue Summary (next {forecast_days} days):
+Count: {fut_summary['yhat']['count']}
+Mean: {fut_summary['yhat']['mean']}
+Min: {fut_summary['yhat']['min']}
+Max: {fut_summary['yhat']['max']}
 
-    Please:
-    - Identify revenue trends and inflection points in both historical and forecasted data
-    - Highlight potential risks, volatility patterns, or seasonality
-    - Apply the Pyramid Principle to structure your insights for executive review
-    - Provide 3 CFO-level strategic recommendations to improve financial performance
-    """
+Instructions:
+- Identify revenue trends and inflection points in both historical and forecasted data
+- Highlight potential risks, volatility patterns, or seasonality
+- Apply the Pyramid Principle to structure your insights for executive-level communication
+- Provide 3 CFO-level strategic recommendations to improve financial performance
+"""
 
     ai_commentary = "No response."
     try:
@@ -177,7 +173,7 @@ if uploaded_file:
             self.cell(0, 10, "Revenue Forecast Summary", ln=True, align="C")
             self.ln(10)
 
-    pdf = PDF()
+    pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=11)
     for k, v in kpi_dict.items():
@@ -204,6 +200,7 @@ if uploaded_file:
         file_name="forecast_summary.pdf",
         mime="application/pdf"
     )
+
 
 
 
