@@ -177,6 +177,69 @@ if uploaded_file:
         mime="application/pdf"
     )
 
+    # AI commentary with Groq
+    st.subheader("🧠 AI-Generated Financial Commentary")
+
+    prompt = f"""
+    You are a senior FP&A analyst. Based on the summarized revenue data below, analyze the current state and outlook of the business.
+
+    🔹 Historical Revenue Summary (last 30 days):
+    Count: {hist_summary['y']['count']}
+    Mean: {hist_summary['y']['mean']}
+    Min: {hist_summary['y']['min']}
+    Max: {hist_summary['y']['max']}
+
+    🔹 Forecasted Revenue Summary (next {forecast_days} days):
+    Count: {fut_summary['yhat']['count']}
+    Mean: {fut_summary['yhat']['mean']}
+    Min: {fut_summary['yhat']['min']}
+    Max: {fut_summary['yhat']['max']}
+
+    Please:
+    - Identify revenue trends and inflection points
+    - Highlight risks or seasonality
+    - Use the Pyramid Principle
+    - Provide 3 CFO-level recommendations
+    """
+
+    estimated_tokens = len(prompt.split())
+    st.sidebar.markdown(f"🧠 Estimated Tokens: `{estimated_tokens}` / 6000")
+
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a financial forecasting expert."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama3-8b-8192"
+        )
+        ai_commentary = response.choices[0].message.content
+        st.markdown(ai_commentary)
+
+        def create_summary_pdf(text: str) -> BytesIO:
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.set_font("Arial", size=12)
+            for line in text.split('\n'):
+                pdf.multi_cell(0, 10, line)
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+            return BytesIO(pdf_bytes)
+
+        pdf_bytes = create_summary_pdf(ai_commentary)
+
+        st.sidebar.download_button(
+            label="🧾 Download AI Commentary PDF",
+            data=pdf_bytes,
+            file_name="ai_commentary_summary.pdf",
+            mime="application/pdf"
+        )
+
+    except Exception as e:
+        st.error(f"Groq API Error: {e}")
+
+
 
 
 
