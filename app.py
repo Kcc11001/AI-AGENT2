@@ -16,7 +16,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 st.set_page_config(page_title="📈 Revenue Forecasting AI Agent", layout="wide")
 st.title("📈 Revenue Forecasting AI Agent")
 
-# ✅ Corrected API key check
+# API Key check
 if not bool(GROQ_API_KEY):
     st.error("🚨 API Key is missing! Set it in .env or Streamlit Secrets.")
     st.stop()
@@ -102,13 +102,55 @@ if uploaded_file:
         st.warning(f"⚠️ {len(anomalies)} anomalies detected")
         st.dataframe(anomalies.rename(columns={"ds": "Date", "yhat": "Forecast", "Confidence Width": "Conf. Range Width"}))
 
-    def generate_excel(df1, df2, kpi_dict, anomaly_df):
+    # AI Commentary Prompt
+    prompt = f"""
+    You are a senior FP&A analyst. Based on the summarized revenue data below, analyze the current state and outlook of the business.
+
+    🔹 Historical Revenue Summary (last 30 days):
+    Count: {hist_summary['y']['count']}
+    Mean: {hist_summary['y']['mean']}
+    Min: {hist_summary['y']['min']}
+    Max: {hist_summary['y']['max']}
+
+    🔹 Forecasted Revenue Summary (next {forecast_days} days):
+    Count: {fut_summary['yhat']['count']}
+    Mean: {fut_summary['yhat']['mean']}
+    Min: {fut_summary['yhat']['min']}
+    Max: {fut_summary['yhat']['max']}
+
+    Please:
+    - Identify revenue trends and inflection points in both historical and forecasted data
+    - Highlight potential risks, volatility patterns, or seasonality
+    - Apply the Pyramid Principle to structure your insights for executive review
+    - Provide 3 CFO-level strategic recommendations to improve financial performance
+    """
+
+    ai_commentary = "No response."
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are a financial forecasting expert."},
+                {"role": "user", "content": prompt}
+            ],
+            model="llama3-8b-8192"
+        )
+        ai_commentary = response.choices[0].message.content
+        st.subheader("🧠 AI-Generated Financial Commentary")
+        st.markdown(ai_commentary)
+
+    except Exception as e:
+        st.error(f"Groq API Error: {e}")
+        ai_commentary = f"Groq API Error: {e}"
+
+    def generate_excel(df1, df2, kpi_dict, anomaly_df, ai_text):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df1.to_excel(writer, index=False, sheet_name='Historical')
             df2.to_excel(writer, index=False, sheet_name='Forecast')
             pd.DataFrame(kpi_dict.items(), columns=["KPI", "Value"]).to_excel(writer, index=False, sheet_name='KPI Summary')
             anomaly_df.to_excel(writer, index=False, sheet_name='Anomalies')
+            pd.DataFrame({'AI Commentary': ai_text.split('\n')}).to_excel(writer, index=False, sheet_name='AI Commentary')
         output.seek(0)
         return output.read()
 
@@ -120,7 +162,7 @@ if uploaded_file:
         "Avg Confidence Range Width": f"${conf_width_avg:,.2f}"
     }
 
-    excel_data = generate_excel(df, forecast, kpi_dict, anomalies)
+    excel_data = generate_excel(df, forecast, kpi_dict, anomalies, ai_commentary)
 
     st.sidebar.download_button(
         label="📥 Download Excel",
@@ -140,67 +182,28 @@ if uploaded_file:
     pdf.set_font("Arial", size=11)
     for k, v in kpi_dict.items():
         pdf.cell(0, 10, f"{k}: {v}", ln=True)
-    pdf.ln(10)
+    pdf.ln(5)
     pdf.cell(0, 10, f"Forecast Anomalies: {len(anomalies)}", ln=True)
     for _, row in anomalies.iterrows():
-        pdf.cell(0, 10, f"{row['ds'].date()} | Forecast: ${row['yhat']:,.0f} | Conf. Width: ${row['Confidence Width']:,.0f} | Severity: {row['Severity Score']}", ln=True)
-    pdf.ln(10)
+        pdf.cell(0, 10, f"{row['ds'].date()} | Forecast: ${row['yhat']:,.0f} | Width: ${row['Confidence Width']:,.0f} | Severity: {row['Severity Score']}", ln=True)
+    pdf.ln(5)
+    pdf.cell(0, 10, "AI Commentary:", ln=True)
+    for line in ai_commentary.split('\n'):
+        pdf.multi_cell(0, 10, line)
+    pdf.ln(5)
     pdf.cell(0, 10, "Confidence Width Chart:", ln=True)
     pdf.image(chart_path, x=10, w=190)
+
     pdf_output = BytesIO()
     pdf_output.write(pdf.output(dest='S').encode('latin1'))
     pdf_output.seek(0)
 
     st.sidebar.download_button(
-        label="🧾 Download PDF Summary",
+        label="🧾 Download PDF",
         data=pdf_output,
         file_name="forecast_summary.pdf",
         mime="application/pdf"
     )
-
-    # Groq AI Commentary
-    st.subheader("🧠 AI-Generated Financial Commentary")
-    prompt = f"""
-    You are a senior FP&A analyst. Analyze the summarized revenue data.
-
-    Historical Avg: {hist_avg}
-    Forecast Avg: {fut_avg}
-    Change: {forecast_change:.2f}%
-    Volatility: {volatility:.2f}
-    """
-    try:
-        client = Groq(api_key=GROQ_API_KEY)
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "You are a financial forecasting expert."},
-                {"role": "user", "content": prompt}
-            ],
-            model="llama3-8b-8192"
-        )
-        ai_commentary = response.choices[0].message.content
-        st.markdown(ai_commentary)
-
-        def create_summary_pdf(text: str) -> BytesIO:
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            pdf.set_font("Arial", size=12)
-            for line in text.split('\n'):
-                pdf.multi_cell(0, 10, line)
-            pdf_bytes = pdf.output(dest='S').encode('latin1')
-            return BytesIO(pdf_bytes)
-
-        pdf_bytes = create_summary_pdf(ai_commentary)
-
-        st.sidebar.download_button(
-            label="🧾 Download AI Commentary PDF",
-            data=pdf_bytes,
-            file_name="ai_commentary_summary.pdf",
-            mime="application/pdf"
-        )
-
-    except Exception as e:
-        st.error(f"Groq API Error: {e}")
 
 
 
