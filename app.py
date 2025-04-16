@@ -7,7 +7,6 @@ import os
 from groq import Groq
 from io import BytesIO
 from fpdf import FPDF
-import base64
 
 # Load API Key
 load_dotenv()
@@ -68,7 +67,6 @@ if uploaded_file:
     high_threshold = volatility * 1.25
     anomaly_threshold = volatility * 1.5
 
-    # Score severity
     forecast_range["Anomaly"] = forecast_range["Confidence Width"] > anomaly_threshold
     forecast_range["Severity Score"] = (forecast_range["Confidence Width"] - anomaly_threshold) / anomaly_threshold
     forecast_range["Severity Score"] = forecast_range["Severity Score"].apply(lambda x: max(0, round(x, 2)))
@@ -96,18 +94,18 @@ if uploaded_file:
         st.warning(f"{len(anomalies)} anomalies detected (confidence width > 1.5x volatility)")
         st.dataframe(anomalies.rename(columns={"ds": "Date", "yhat": "Forecast", "Confidence Width": "Conf. Width"}))
 
-    # Save plot to PNG
+    # Save chart for Excel/PDF export
     img_buffer = BytesIO()
     fig.savefig(img_buffer, format='png')
     img_buffer.seek(0)
+    img_data = img_buffer.getvalue()
 
     def generate_excel(df1, df2, kpi_dict, anomaly_df):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df1.to_excel(writer, index=False, sheet_name='Historical')
             df2.to_excel(writer, index=False, sheet_name='Forecast')
-            kpi_df = pd.DataFrame(kpi_dict.items(), columns=["KPI", "Value"])
-            kpi_df.to_excel(writer, index=False, sheet_name='KPI Summary')
+            pd.DataFrame(kpi_dict.items(), columns=["KPI", "Value"]).to_excel(writer, index=False, sheet_name='KPI Summary')
             anomaly_df.to_excel(writer, index=False, sheet_name='Anomalies')
         output.seek(0)
         return output.read()
@@ -147,10 +145,10 @@ if uploaded_file:
         pdf.cell(0, 10, f"{row['ds'].date()} | Forecast: ${row['yhat']:,.0f} | Conf. Width: ${row['Confidence Width']:,.0f} | Severity: {row['Severity Score']}", ln=True)
     pdf.ln(10)
     pdf.cell(0, 10, "Confidence Width Chart:", ln=True)
-    pdf.image(img_buffer, x=10, w=190)
+    chart_img = BytesIO(img_data)
+    pdf.image(chart_img, x=10, w=190)
     pdf_output = BytesIO()
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
-    pdf_output.write(pdf_bytes)
+    pdf_output.write(pdf.output(dest='S').encode('latin1'))
     pdf_output.seek(0)
 
     st.sidebar.download_button(
@@ -159,4 +157,6 @@ if uploaded_file:
         file_name="forecast_summary.pdf",
         mime="application/pdf"
     )
+
+
 
