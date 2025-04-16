@@ -16,21 +16,16 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 st.set_page_config(page_title="📈 Revenue Forecasting AI Agent", layout="wide")
 st.title("📈 Revenue Forecasting AI Agent")
 
-# Check API Key
-if not GROQ_API_KEY:
-    st.error("🚨 API Key is missing! Set it in a `.env` file or Streamlit Secrets.")
+# ✅ Corrected API key check
+if not bool(GROQ_API_KEY):
+    st.error("🚨 API Key is missing! Set it in .env or Streamlit Secrets.")
     st.stop()
 
 # Upload Excel file
 uploaded_file = st.file_uploader("📥 Upload Excel file with 'Date' and 'Revenue' columns", type=["xlsx", "xls"])
 
 if uploaded_file:
-    try:
-        df = pd.read_excel(uploaded_file)
-    except Exception as e:
-        st.error(f"❌ Error reading file: {e}")
-        st.stop()
-
+    df = pd.read_excel(uploaded_file)
     if "Date" not in df.columns or "Revenue" not in df.columns:
         st.error("❌ File must include 'Date' and 'Revenue' columns.")
         st.stop()
@@ -38,7 +33,6 @@ if uploaded_file:
     df = df[["Date", "Revenue"]].dropna()
     df.columns = ["ds", "y"]
     df["ds"] = pd.to_datetime(df["ds"])
-
     st.subheader("📊 Historical Revenue")
     st.line_chart(df.set_index("ds"))
 
@@ -46,13 +40,11 @@ if uploaded_file:
     st.sidebar.header("🔧 Forecast Settings")
     forecast_days = st.sidebar.selectbox("Forecast period (days):", [30, 60, 90, 180], index=2)
 
-    # Prophet forecasting
     model = Prophet()
     model.fit(df)
     future = model.make_future_dataframe(periods=forecast_days)
     forecast = model.predict(future)
 
-    # KPI metrics
     hist_summary = df.tail(30).describe().round(2).to_dict()
     fut_summary = forecast[['ds', 'yhat']].tail(forecast_days).describe().round(2).to_dict()
 
@@ -72,7 +64,6 @@ if uploaded_file:
     col4.metric("🔁 Revenue Volatility", f"${volatility:,.0f}")
     col5.metric("📏 Confidence Range", f"${conf_width_avg:,.0f}")
 
-    # Confidence width plot
     st.subheader("📏 Forecast Confidence Width vs Historical Volatility")
     forecast_range = forecast.tail(forecast_days).copy()
     forecast_range["Confidence Width"] = forecast_range["yhat_upper"] - forecast_range["yhat_lower"]
@@ -90,31 +81,27 @@ if uploaded_file:
     ax.axhline(volatility, color="green", linestyle="--", label="Historical Volatility")
     ax.axhline(low_threshold, color="gray", linestyle=":", label="Low Threshold (0.75×)")
     ax.axhline(high_threshold, color="red", linestyle=":", label="High Threshold (1.25×)")
-    ax.fill_between(forecast_range["ds"], 0, low_threshold, color="green", alpha=0.1, label="Acceptable Range")
-    ax.fill_between(forecast_range["ds"], low_threshold, high_threshold, color="orange", alpha=0.1, label="Warning Zone")
+    ax.fill_between(forecast_range["ds"], 0, low_threshold, color="green", alpha=0.1)
+    ax.fill_between(forecast_range["ds"], low_threshold, high_threshold, color="orange", alpha=0.1)
     ax.fill_between(forecast_range["ds"], high_threshold, forecast_range["Confidence Width"],
-                    where=forecast_range["Confidence Width"] > high_threshold,
-                    color="red", alpha=0.2, label="High Risk")
+                    where=forecast_range["Confidence Width"] > high_threshold, color="red", alpha=0.2)
     ax.set_ylabel("Confidence Width ($)")
     ax.set_title("Forecast Confidence Width vs Historical Revenue Volatility")
-    ax.legend(loc="upper right")
+    ax.legend()
     ax.grid(True)
     st.pyplot(fig)
 
-    # Save chart as image
     chart_path = "confidence_chart.png"
     fig.savefig(chart_path, format='png')
 
-    # 🔍 Detect Anomalies
-    st.subheader("🚨 Forecast Anomaly Detection")
     anomalies = forecast_range[forecast_range["Anomaly"]][["ds", "yhat", "Confidence Width", "Severity Score"]]
+    st.subheader("🚨 Forecast Anomaly Detection")
     if anomalies.empty:
-        st.success("✅ No anomalies detected in the forecast confidence intervals.")
+        st.success("✅ No anomalies detected.")
     else:
-        st.warning(f"⚠️ {len(anomalies)} anomalies detected (confidence width > 1.5× historical volatility)")
+        st.warning(f"⚠️ {len(anomalies)} anomalies detected")
         st.dataframe(anomalies.rename(columns={"ds": "Date", "yhat": "Forecast", "Confidence Width": "Conf. Range Width"}))
 
-    # Excel export
     def generate_excel(df1, df2, kpi_dict, anomaly_df):
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -125,7 +112,6 @@ if uploaded_file:
         output.seek(0)
         return output.read()
 
-    # KPI export
     kpi_dict = {
         "Historical Average Revenue": f"${hist_avg:,.2f}",
         "Forecast Average Revenue": f"${fut_avg:,.2f}",
@@ -136,15 +122,13 @@ if uploaded_file:
 
     excel_data = generate_excel(df, forecast, kpi_dict, anomalies)
 
-    st.sidebar.subheader("📤 Export Options")
     st.sidebar.download_button(
         label="📥 Download Excel",
         data=excel_data,
-        file_name="revenue_forecast_with_kpis.xlsx",
+        file_name="forecast_report.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    # PDF export with anomaly scoring and chart
     class PDF(FPDF):
         def header(self):
             self.set_font("Arial", "B", 14)
@@ -156,16 +140,13 @@ if uploaded_file:
     pdf.set_font("Arial", size=11)
     for k, v in kpi_dict.items():
         pdf.cell(0, 10, f"{k}: {v}", ln=True)
-
     pdf.ln(10)
     pdf.cell(0, 10, f"Forecast Anomalies: {len(anomalies)}", ln=True)
     for _, row in anomalies.iterrows():
         pdf.cell(0, 10, f"{row['ds'].date()} | Forecast: ${row['yhat']:,.0f} | Conf. Width: ${row['Confidence Width']:,.0f} | Severity: {row['Severity Score']}", ln=True)
-
     pdf.ln(10)
     pdf.cell(0, 10, "Confidence Width Chart:", ln=True)
     pdf.image(chart_path, x=10, w=190)
-
     pdf_output = BytesIO()
     pdf_output.write(pdf.output(dest='S').encode('latin1'))
     pdf_output.seek(0)
@@ -177,34 +158,16 @@ if uploaded_file:
         mime="application/pdf"
     )
 
-    # AI commentary with Groq
+    # Groq AI Commentary
     st.subheader("🧠 AI-Generated Financial Commentary")
-
     prompt = f"""
-    You are a senior FP&A analyst. Based on the summarized revenue data below, analyze the current state and outlook of the business.
+    You are a senior FP&A analyst. Analyze the summarized revenue data.
 
-    🔹 Historical Revenue Summary (last 30 days):
-    Count: {hist_summary['y']['count']}
-    Mean: {hist_summary['y']['mean']}
-    Min: {hist_summary['y']['min']}
-    Max: {hist_summary['y']['max']}
-
-    🔹 Forecasted Revenue Summary (next {forecast_days} days):
-    Count: {fut_summary['yhat']['count']}
-    Mean: {fut_summary['yhat']['mean']}
-    Min: {fut_summary['yhat']['min']}
-    Max: {fut_summary['yhat']['max']}
-
-    Please:
-    - Identify revenue trends and inflection points
-    - Highlight risks or seasonality
-    - Use the Pyramid Principle
-    - Provide 3 CFO-level recommendations
+    Historical Avg: {hist_avg}
+    Forecast Avg: {fut_avg}
+    Change: {forecast_change:.2f}%
+    Volatility: {volatility:.2f}
     """
-
-    estimated_tokens = len(prompt.split())
-    st.sidebar.markdown(f"🧠 Estimated Tokens: `{estimated_tokens}` / 6000")
-
     try:
         client = Groq(api_key=GROQ_API_KEY)
         response = client.chat.completions.create(
@@ -238,6 +201,7 @@ if uploaded_file:
 
     except Exception as e:
         st.error(f"Groq API Error: {e}")
+
 
 
 
