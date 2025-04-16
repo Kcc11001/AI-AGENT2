@@ -94,11 +94,9 @@ if uploaded_file:
         st.warning(f"{len(anomalies)} anomalies detected (confidence width > 1.5x volatility)")
         st.dataframe(anomalies.rename(columns={"ds": "Date", "yhat": "Forecast", "Confidence Width": "Conf. Width"}))
 
-    # Save chart for Excel/PDF export
-    img_buffer = BytesIO()
-    fig.savefig(img_buffer, format='png')
-    img_buffer.seek(0)
-    img_data = img_buffer.getvalue()
+    # Save chart to temporary PNG file
+    chart_path = "confidence_chart.png"
+    fig.savefig(chart_path, format='png')
 
     def generate_excel(df1, df2, kpi_dict, anomaly_df):
         output = BytesIO()
@@ -145,8 +143,7 @@ if uploaded_file:
         pdf.cell(0, 10, f"{row['ds'].date()} | Forecast: ${row['yhat']:,.0f} | Conf. Width: ${row['Confidence Width']:,.0f} | Severity: {row['Severity Score']}", ln=True)
     pdf.ln(10)
     pdf.cell(0, 10, "Confidence Width Chart:", ln=True)
-    chart_img = BytesIO(img_data)
-    pdf.image(chart_img, x=10, w=190)
+    pdf.image(chart_path, x=10, w=190)
     pdf_output = BytesIO()
     pdf_output.write(pdf.output(dest='S').encode('latin1'))
     pdf_output.seek(0)
@@ -157,6 +154,7 @@ if uploaded_file:
         file_name="forecast_summary.pdf",
         mime="application/pdf"
     )
+
 
 
 
